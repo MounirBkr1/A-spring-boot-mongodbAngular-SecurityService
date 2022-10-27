@@ -32,3 +32,5 @@ public class AppUser {
     @ManyToMany(fetch=FetchType.EAGER)
     private Collection<AppRole> roles = new ArrayList<>();
 }
+
+

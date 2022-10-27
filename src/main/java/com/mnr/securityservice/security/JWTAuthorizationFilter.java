@@ -1,68 +1,97 @@
 package com.mnr.securityservice.security;
 
 import com.auth0.jwt.JWT;
+import com.auth0.jwt.JWTVerifier;
 import com.auth0.jwt.algorithms.Algorithm;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.mnr.securityservice.entities.AppUser;
-import org.springframework.security.authentication.AuthenticationManager;
+import com.auth0.jwt.interfaces.DecodedJWT;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.AuthenticationException;
-import org.springframework.security.core.userdetails.User;
-import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.web.filter.OncePerRequestFilter;
 
+import javax.servlet.Filter;
 import javax.servlet.FilterChain;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 
-public class JWTAuthorizationFilter extends UsernamePasswordAuthenticationFilter {
 
-    private AuthenticationManager authenticationManager;
+//Appelé pour chaque POST method
+public class JWTAuthorizationFilter extends OncePerRequestFilter {
 
-    public JWTAuthorizationFilter(AuthenticationManager authenticationManager) {
-        this.authenticationManager = authenticationManager;
-    }
-
-
+    //pr chaque requete envoyé par user,cette methode va s'executer d abord
     @Override
-    public Authentication attemptAuthentication(HttpServletRequest request, HttpServletResponse response) throws AuthenticationException {
+    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
+
+        //authorise all page to send me queries
+        response.addHeader("Access-Control-Allow-Origin", "*");
+        //authorize user to send thoses properties
+        response.addHeader("Access-Control-Allow-Headers", "Origin, Accept, X-Requested-With, Content-Type, Access-Control-Request-Method, Access-Control-Request-Headers,authorization");
+        //expose this properties  to read by users
+        response.addHeader("Access-Control-Expose-Headers", "Access-Control-Allow-Origin, Access-Control-Allow-Credentials, authorization");
+        //autorise put delete update...  methodes
+        response.addHeader("Access-Contol-Allow-Methods","GET,POST,PUT,DELETE,PATCH");
+
+        if (request.getMethod().equals("OPTIONS")) {
+            //s'il envoie une requette avec options, je l'autorise
+            response.setStatus(HttpServletResponse.SC_OK);
+        }
+//        else if(request.getRequestURI().equals("/login"))
+//        {
+//            //si c'est page /login ,je passe
+//            filterChain.doFilter(request, response);
+//            return;
+//        }
+        else {
+            //System.out.println(new Date(System.currentTimeMillis()));
+            //System.out.println(new Date(System.currentTimeMillis() + SecurityParams.EXPIRATION));
+
+            //recuperer jwt
+            String jwtToken=request.getHeader(SecurityParams.JWT_HEADER_NAME);
+
+            if(jwtToken==null || !jwtToken.startsWith(SecurityParams.HEADER_PREFIX)){
+                //ne rien faire ==return
+                filterChain.doFilter(request,response);
+                return;
+            }
+
+            //verifier la signature de l algorithm
+            JWTVerifier verifier = JWT.require(Algorithm.HMAC256(SecurityParams.SECRET)).build();
+
+            //decoder en enlevant "Bearer "
+            String jwt = jwtToken.substring(SecurityParams.HEADER_PREFIX.length());
+            DecodedJWT decodedJWT = verifier.verify(jwt);
+            System.out.println("JWT=" + jwt);
+
+            //recuperer les  informations
+            String username = decodedJWT.getSubject();
+            List<String> roles=decodedJWT.getClaims().get("roles").asList(String.class);
+            //System.out.println("username=" + username);
+            //System.out.println("roles=" + roles);
+
+            Collection<GrantedAuthority> authorities=new ArrayList<>();
 
 
-        //deserialisatin of object json on java object
-        try {
-            AppUser appUser = new ObjectMapper().readValue(request.getInputStream(),AppUser.class);
-            return  authenticationManager.authenticate(
-                    new UsernamePasswordAuthenticationToken(appUser.getUsername(),appUser.getPassword()));
+            roles.forEach(rn->{
+                authorities.add(new SimpleGrantedAuthority(rn));
+            });
 
-        } catch (IOException e) {
-            e.printStackTrace();
-            throw new RuntimeException(e);
+            //authentifier l user qui est porté par jwt, mot de passe null
+            UsernamePasswordAuthenticationToken user=
+                    new UsernamePasswordAuthenticationToken(username,null,authorities);
+            SecurityContextHolder.getContext().setAuthentication(user);
+
+            //passer au filtre suivant
+            filterChain.doFilter(request,response);
+
         }
     }
-
-    @Override
-    protected void successfulAuthentication(HttpServletRequest request, HttpServletResponse response, FilterChain chain, Authentication authResult) throws IOException, ServletException {
-        //getPrincipal: return user authentifié
-        User user= (User) authResult.getPrincipal();
-        List<String> roles= new ArrayList<>();
-        authResult.getAuthorities().forEach(a->{
-            roles.add(a.getAuthority());
-        });
-
-        String jwt= JWT.create()
-                .withIssuer(request.getRequestURI())
-                .withSubject(user.getUsername())
-                .withArrayClaim("roles",roles.toArray(new String[roles.size()]))
-                .withExpiresAt(new Date(System.currentTimeMillis()+10*24*3600))
-                .sign(Algorithm.HMAC256("miirbri1@gmail.com"));
-        response.addHeader("Authorization",jwt);
-        
-    }
-
-
 }
+
+
