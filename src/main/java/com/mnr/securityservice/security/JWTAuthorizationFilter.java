@@ -36,7 +36,7 @@ public class JWTAuthorizationFilter extends OncePerRequestFilter {
         //expose this properties  to read by users
         response.addHeader("Access-Control-Expose-Headers", "Access-Control-Allow-Origin, Access-Control-Allow-Credentials, authorization");
         //autorise put delete update...  methodes
-        response.addHeader("Access-Contol-Allow-Methods","GET,POST,PUT,DELETE,PATCH");
+        response.addHeader("Access-Control-Allow-Methods","GET,POST,PUT,DELETE,PATCH");
 
         if (request.getMethod().equals("OPTIONS")) {
             //s'il envoie une requette avec options, je l'autorise
